@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hacker Typer Simulator</title>
+    <!-- Tailwind CSS for modern layout utilities -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts for Monospaced Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body {
+            background-color: #050505;
+            color: #00ff00;
+            font-family: 'Share Tech Mono', 'Fira Code', monospace;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+        }
+
+        /* CRT Scanline Effect Overlay */
+        .scanline {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.25) 50%
+            ), linear-gradient(
+                90deg,
+                rgba(255, 0, 0, 0.03),
+                rgba(0, 255, 0, 0.01),
+                rgba(0, 0, 255, 0.03)
+            );
+            background-size: 100% 4px, 6px 100%;
+            z-index: 999;
+        }
+
+        /* CRT Flicker & Glow */
+        .crt-glow {
+            text-shadow: 0 0 8px rgba(0, 255, 0, 0.6), 0 0 20px rgba(0, 255, 0, 0.2);
+        }
+
+        /* Blinking Cursor */
+        .cursor {
+            display: inline-block;
+            background-color: #00ff00;
+            width: 10px;
+            height: 1.2em;
+            vertical-align: middle;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        /* Glitch Animation */
+        .glitch {
+            position: relative;
+        }
+        .glitch::before, .glitch::after {
+            content: attr(data-text);
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+        }
+        .glitch::before {
+            left: 2px; text-shadow: -2px 0 #ff00c1;
+            clip: rect(24px, 550px, 90px, 0);
+            animation: glitch-anim 2s infinite linear alternate-reverse;
+        }
+        .glitch::after {
+            left: -2px; text-shadow: -2px 0 #00fff9;
+            clip: rect(85px, 550px, 140px, 0);
+            animation: glitch-anim2 2.5s infinite linear alternate-reverse;
+        }
+
+        @keyframes glitch-anim {
+            0% { clip: rect(12px, 9999px, 44px, 0); }
+            20% { clip: rect(65px, 9999px, 11px, 0); }
+            40% { clip: rect(33px, 9999px, 89px, 0); }
+            60% { clip: rect(90px, 9999px, 2px, 0); }
+            80% { clip: rect(15px, 9999px, 72px, 0); }
+            100% { clip: rect(50px, 9999px, 31px, 0); }
+        }
+
+        @keyframes glitch-anim2 {
+            0% { clip: rect(44px, 9999px, 12px, 0); }
+            20% { clip: rect(11px, 9999px, 65px, 0); }
+            40% { clip: rect(89px, 9999px, 33px, 0); }
+            60% { clip: rect(2px, 9999px, 90px, 0); }
+            80% { clip: rect(72px, 9999px, 15px, 0); }
+            100% { clip: rect(31px, 9999px, 50px, 0); }
+        }
+
+        /* Custom Scrollbar for Terminal */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #000;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #003300;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00ff00;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen select-none">
+    <div class="scanline"></div>
+
+    <!-- HUD Header -->
+    <header class="flex justify-between items-center px-4 py-2 bg-black border-b border-green-900 text-xs tracking-widest z-10">
+        <div class="flex items-center space-x-4">
+            <span class="flex items-center text-green-500 font-bold crt-glow">
+                <i class="fa-solid fa-terminal mr-2"></i>ROOT@SEC-OPS:~#
+            </span>
+            <span class="hidden md:inline text-green-700">| STATUS: SECURE TUNNEL ACTIVE</span>
+        </div>
+        <div class="flex items-center space-x-3">
+            <button id="soundToggle" class="px-2 py-1 border border-green-800 rounded hover:bg-green-950 transition text-green-400">
+                <i class="fa-solid fa-volume-high mr-1"></i> SIKAP SUARA: <span id="soundStatus">ON</span>
+            </button>
+            <button id="fullscreenBtn" class="px-2 py-1 border border-green-800 rounded hover:bg-green-950 transition text-green-400">
+                <i class="fa-solid fa-expand mr-1"></i> [F11] LAYAR PENUH
+            </button>
+            <button id="helpBtn" class="px-2 py-1 border border-green-800 rounded hover:bg-green-950 transition text-green-400">
+                <i class="fa-solid fa-circle-question"></i> BANTUAN
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Terminal Output Container -->
+    <main id="terminalContainer" class="flex-1 p-4 md:p-6 overflow-y-auto whitespace-pre-wrap break-all text-sm md:text-base leading-relaxed crt-glow z-10">
+        <span id="codeOutput"></span><span class="cursor"></span>
+    </main>
+
+    <!-- Mobile Virtual Keyboard Trigger / Bar -->
+    <div id="mobileKeyboardBar" class="bg-black border-t border-green-900 p-2 flex justify-between items-center z-10 md:hidden">
+        <span class="text-xs text-green-600 px-2"><i class="fa-solid fa-mobile-screen mr-1"></i> KETUK LAYAR / TOMBOL DI BAWAH</span>
+        <button id="virtualKeyTrigger" class="bg-green-950 text-green-400 border border-green-700 px-3 py-1 rounded text-xs font-bold animate-pulse">
+            BUKA KEYBOARD VIRTUAL
+        </button>
+        <!-- Hidden input for mobile keyboard focus -->
+        <input type="text" id="mobileInput" class="opacity-0 absolute w-0 h-0 pointer-events-none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </div>
+
+    <!-- Modal Overlays (Access Granted / Denied / Help / Notification) -->
+    <div id="modalOverlay" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <!-- Access Granted Modal -->
+        <div id="grantedModal" class="bg-black border-4 border-green-500 p-8 rounded-lg max-w-lg w-full text-center shadow-[0_0_50px_rgba(0,255,0,0.5)] hidden">
+            <div class="text-6{-} text-green-500 mb-4 animate-bounce"><i class="fa-solid fa-shield-halved"></i></div>
+            <h1 class="text-3xl md:text-4xl font-black text-green-500 mb-4 glitch tracking-widest" data-text="ACCESS GRANTED">ACCESS GRANTED</h1>
+            <p class="text-green-300 mb-6 text-sm md:text-base">Sistem mainframe berhasil dijebol. Akses tingkat root diamankan sepenuhnya. Seluruh firewall mainframe berhasil dilewati tanpa jejak.</p>
+            <button class="closeModalBtn bg-green-600 hover:bg-green-500 text-black font-bold px-6 py-2 rounded transition tracking-wider">KEMBALI KE TERMINAL [ESC]</button>
+        </div>
+
+        <!-- Access Denied Modal -->
+        <div id="deniedModal" class="bg-black border-4 border-red-600 p-8 rounded-lg max-w-lg w-full text-center shadow-[0_0_50px_rgba(255,0,0,0.5)] hidden">
+            <div class="text-6xl text-red-600 mb-4 animate-pulse"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <h1 class="text-3xl md:text-4xl font-black text-red-500 mb-4 tracking-widest animate-pulse">ACCESS DENIED</h1>
+            <p class="text-red-300 mb-6 text-sm md:text-base">PERINGATAN KEAMANAN: Aktivitas intrusi terdeteksi! Alamat IP Anda telah dicatat. Protokol penutupan darurat diaktifkan oleh sistem pertahanan pusat.</p>
+            <button class="closeModalBtn bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-2 rounded transition tracking-wider">ABAIKAN PERINGATAN [ESC]</button>
+        </div>
+
+        <!-- Help / README Documentation Modal -->
+        <div id="helpModal" class="bg-black border-2 border-green-700 p-6 md:p-8 rounded-lg max-w-3xl w-full text-left shadow-2xl overflow-y-auto max-h-[85vh] hidden text-green-300 text-sm">
+            <div class="flex justify-between items-center border-b border-green-800 pb-3 mb-4">
+                <h2 class="text-xl font-bold text-green-400"><i class="fa-solid fa-book mr-2"></i> README.md - Hacker Typer Simulator</h2>
+                <button class="closeModalBtn text-green-500 hover:text-green-300 text-lg font-bold"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div class="space-y-4 leading-relaxed">
+                <h3 class="text-green-400 font-bold uppercase tracking-wider">Deskripsi Proyek</h3>
+                <p>Hacker Typer Simulator adalah web app interaktif bergaya terminal retro yang mensimulasikan pengetikan kode tingkat lanjut secara otomatis. Sangat ideal digunakan sebagai properti film pendek, sarana lelucon (prank) kepada teman, atau sekadar membuat Anda terlihat super sibuk di kantor maupun kelas.</p>
+
+                <h3 class="text-green-400 font-bold uppercase tracking-wider mt-4">Fitur Utama & Pintasan Keyboard</h3>
+                <ul class="list-disc pl-5 space-y-2">
+                    <li><strong>Ketikan Acak Otomatis:</strong> Tekan tombol apa saja pada keyboard untuk menghasilkan barisan kode kompleks (C++, Python kernel, Enkripsi AES) sebanyak 3-5 karakter per ketukan.</li>
+                    <li><strong>Tombol <code class="bg-green-950 px-1 rounded text-green-200">F11</code>:</strong> Membuka petunjuk layar penuh browser.</li>
+                    <li><strong>Tekan tombol <code class="bg-green-950 px-1 rounded text-green-200">Alt</code> 3 kali beruntun:</strong> Memicu popup rahasia <span class="text-green-400 font-bold">ACCESS GRANTED</span> dengan efek glitch cyberpunk.</li>
+                    <li><strong>Tekan tombol <code class="bg-green-950 px-1 rounded text-green-200">Caps Lock</code> 3 kali beruntun:</strong> Memicu peringatan bahaya darurat <span class="text-red-500 font-bold">ACCESS DENIED</span> berwarna merah menyala.</li>
+                    <li><strong>Tombol <code class="bg-green-950 px-1 rounded text-green-200">Esc</code>:</strong> Menutup modal peringatan aktif dan mengembalikan fokus ke konsol.</li>
+                </ul>
+
+                <h3 class="text-green-400 font-bold uppercase tracking-wider mt-4">Panduan Deploy di GitHub Pages</h3>
+                <ol class="list-decimal pl-5 space-y-1">
+                    <li>Buat repository publik baru di GitHub (misalnya: <code class="text-green-400">hacker-typer-clone</code>).</li>
+                    <li>Unggah file kode sumber ini dan beri nama <code class="text-green-400">index.html</code>.</li>
+                    <li>Masuk ke menu <strong>Settings</strong> repository Anda di GitHub.</li>
+                    <li>Navigasi ke tab <strong>Pages</strong> pada sidebar kiri.</li>
+                    <li>Pada bagian <em>Build and deployment</em>, pilih Branch ke <code class="text-green-400">main</code> (atau <code class="text-green-400">master</code>) dan folder <code class="text-green-400">/ (root)</code>, lalu klik <strong>Save</strong>.</li>
+                    <li>Tunggu beberapa saat, website simulator Anda kini dapat diakses secara publik melalui link GitHub Pages!</li>
+                </ol>
+            </div>
+            <div class="mt-6 text-center">
+                <button class="closeModalBtn bg-green-800 hover:bg-green-700 text-black font-bold px-6 py-2 rounded transition">MENGERTI & KEMBALI</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Complex Code Snippets Array for Hacker Typing
+        const codeSnippets = [
+            `#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/crypto.h>
+#include <net/sock.h>
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("RootAgent_0x99");
+MODULE_DESCRIPTION("Advanced Kernel Rootkit & Socket Interceptor v4.8.2");
+
+static int __init sec_init(void) {
+    printk(KERN_INFO "[SEC_CORE] Initializing secure kernel hook...\\n");
+    // Bypassing netfilter firewall rules and memory protection rings
+    crypto_alloc_cipher("aes", 0, CRYPTO_ALG_ASYNC);
+    return 0;
+}
+static void __exit sec_exit(void) {
+    printk(KERN_INFO "[SEC_CORE] Unloading module securely.\\n");
+}
+module_init(sec_init);
+module_exit(sec_exit);
+`,
+            `import socket
+import ssl
+import hashlib
+import threading
+import time
+import sys
+
+TARGET_HOST = "192.168.1.105"
+TARGET_PORT = 443
+ENCRYPTION_KEY = b"x9F#mK92_secure_vector_stream"
+
+class NeuralDecrypter(threading.Thread):
+    def __init__(self, buffer_offset):
+        threading.Thread.__init__(self)
+        self.offset = buffer_offset
+
+    def run(self):
+        print(f"[*] Thread {self.offset} spawned. Brute-forcing RSA key exchange...")
+        time.sleep(0.01)
+        hashed_handshake = hashlib.sha3_512(ENCRYPTION_KEY * 1024).hexdigest()
+        print(f"[+] Handshake verified: {hashed_handshake[:32]}...")
+
+if __name__ == "__main__":
+    for i in range(16):
+        NeuralDecrypter(i).start()
+`,
+            `const WebSocket = require('ws');
+const crypto = require('crypto');
+
+const TARGET_CLUSTER = "wss://mainframe.internal.net:8443/stream";
+const cipherKey = crypto.scryptSync('secret_pass', 'gfg', 32);
+const iv = crypto.randomBytes(16);
+
+function establishTunnel() {
+    console.log("[*] Establishing encrypted handshake across TCP ports...");
+    const cipher = crypto.createCipheriv('aes-256-cbc', cipherKey, iv);
+    let encrypted = cipher.update('ROOT_ACCESS_PAYLOAD_DEPLOYED', 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    console.log("[+] Cipher payload generated: " + encrypted.substring(0, 40) + "...");
+}
+establishTunnel();
+`,
+            `#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void exploit_stack_overflow(char *target_ptr, size_t len) {
+    unsigned char shellcode[] = "\\x31\\xc0\\x50\\x68\\x2f\\x2f\\x73\\x68\\x68\\x2f\\x62\\x69\\x6e\\x89\\xe3\\x50\\x53\\x89\\xe1\\xb0\\x0b\\xcd\\x80";
+    void *exec_mem = mmap(NULL, sizeof(shellcode), PROT_READ | PROT_WRITE | PROT_EXEC, MAP_ANON | MAP_PRIVATE, -1, 0);
+    
+    if (exec_mem == MAP_FAILED) {
+        perror("Memory allocation failed");
+        exit(1);
+    }
+    memcpy(exec_mem, shellcode, sizeof(shellcode));
+    ((void(*)(void))exec_mem)();
+}
+`
+        ];
+
+        // State variables
+        let currentSnippetIndex = 0;
+        let charIndex = 0;
+        let typedText = "";
+        let soundEnabled = true;
+
+        // Sequence tracking for Alt (3x) and CapsLock (3x)
+        let altCount = 0;
+        let altTimer = null;
+        let capsCount = 0;
+        let capsTimer = null;
+
+        const codeOutput = document.getElementById("codeOutput");
+        const terminalContainer = document.getElementById("terminalContainer");
+        const modalOverlay = document.getElementById("modalOverlay");
+        const grantedModal = document.getElementById("grantedModal");
+        const deniedModal = document.getElementById("deniedModal");
+        const helpModal = document.getElementById("helpModal");
+        const soundToggleBtn = document.getElementById("soundToggle");
+        const soundStatus = document.getElementById("soundStatus");
+        const fullscreenBtn = document.getElementById("fullscreenBtn");
+        const helpBtn = document.getElementById("helpBtn");
+        const virtualKeyTrigger = document.getElementById("virtualKeyTrigger");
+        const mobileInput = document.getElementById("mobileInput");
+
+        // Web Audio API Synthesizer for Mechanical Keyboard Sound
+        function playKeystrokeSound() {
+            if (!soundEnabled) return;
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                osc.type = 'triangle';
+                // Randomize frequency slightly for realistic mechanical sound
+                osc.frequency.setValueAtTime(120 + Math.random() * 80, audioCtx.currentTime);
+                
+                gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.05);
+            } catch (e) {
+                // AudioContext blocked or unsupported
+            }
+        }
+
+        // Append 3 to 5 characters from the current active code snippet
+        function typeCharacters() {
+            const snippet = codeSnippets[currentSnippetIndex];
+            const charsToAdd = Math.floor(Math.random() * 3) + 3; // 3 to 5 chars
+
+            for (let i = 0; i < charsToAdd; i++) {
+                if (charIndex >= snippet.length) {
+                    // Switch to next snippet seamlessly
+                    currentSnippetIndex = (currentSnippetIndex + 1) % codeSnippets.length;
+                    charIndex = 0;
+                    typedText += "\n\n/* --- NEW SECURE STREAM CHUNK LOADED --- */\n\n";
+                }
+                typedText += snippet.charAt(charIndex);
+                charIndex++;
+            }
+
+            codeOutput.textContent = typedText;
+            terminalContainer.scrollTop = terminalContainer.scrollHeight;
+            playKeystrokeSound();
+        }
+
+        // Event Listener for Keydown & Shortcut Detection
+        window.addEventListener("keydown", (e) => {
+            // Ignore function keys or system shortcuts except F11
+            if (e.key === "F11") {
+                e.preventDefault();
+                toggleFullScreen();
+                return;
+            }
+
+            // If modal is active, Esc closes it
+            if (e.key === "Escape") {
+                closeAllModals();
+                return;
+            }
+
+            // Do not type if any modal is currently visible
+            if (!modalOverlay.classList.contains("hidden")) return;
+
+            // Detect Alt 3 times consecutively
+            if (e.key === "Alt") {
+                altCount++;
+                clearTimeout(altTimer);
+                altTimer = setTimeout(() => { altCount = 0; }, 1000);
+                if (altCount >= 3) {
+                    showModal(grantedModal);
+                    altCount = 0;
+                    return;
+                }
+            }
+
+            // Detect CapsLock 3 times consecutively
+            if (e.key === "CapsLock" || e.getModifierState && e.getModifierState("CapsLock")) {
+                capsCount++;
+                clearTimeout(capsTimer);
+                capsTimer = setTimeout(() => { capsCount = 0; }, 1000);
+                if (capsCount >= 3) {
+                    showModal(deniedModal);
+                    capsCount = 0;
+                    return;
+                }
+            }
+
+            // Trigger typing simulation for regular keys
+            if (e.key.length === 1 || e.key === "Enter" || e.key === "Tab" || e.key === "Backspace") {
+                e.preventDefault();
+                typeCharacters();
+            }
+        });
+
+        // Modal utility functions
+        function showModal(modalElement) {
+            modalOverlay.classList.remove("hidden");
+            grantedModal.classList.add("hidden");
+            deniedModal.classList.add("hidden");
+            helpModal.classList.add("hidden");
+            modalElement.classList.remove("hidden");
+        }
+
+        function closeAllModals() {
+            modalOverlay.classList.add("hidden");
+            grantedModal.classList.add("hidden");
+            deniedModal.classList.add("hidden");
+            helpModal.classList.add("hidden");
+        }
+
+        // Sound Toggle Handler
+        soundToggleBtn.addEventListener("click", () => {
+            soundEnabled = !soundEnabled;
+            soundStatus.textContent = soundEnabled ? "ON" : "OFF";
+        });
+
+        // Fullscreen Toggle Handler
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    alert(`Error attempting to enable fullscreen: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+        fullscreenBtn.addEventListener("click", toggleFullScreen);
+
+        // Help Modal Handler
+        helpBtn.addEventListener("click", () => {
+            showModal(helpModal);
+        });
+
+        // Close Modal Buttons
+        document.querySelectorAll(".closeModalBtn").forEach(btn => {
+            btn.addEventListener("click", closeAllModals);
+        });
+
+        // Mobile Virtual Keyboard trigger
+        virtualKeyTrigger.addEventListener("click", () => {
+            mobileInput.focus();
+            virtualKeyTrigger.textContent = "KEYBOARD AKTIF (KETIK SEKARANG)";
+            setTimeout(() => {
+                virtualKeyTrigger.textContent = "BUKA KEYBOARD VIRTUAL";
+            }, 3000);
+        });
+
+        mobileInput.addEventListener("input", (e) => {
+            typeCharacters();
+            mobileInput.value = ""; // Clear input to allow continuous typing
+        });
+
+        // Initial greeting on load
+        window.onload = function() {
+            typedText = "/* ======================================================= */\n" +
+                        "/* HACKER TYPER SIMULATOR - SECURE ROOT CONSOLE v2.6.4     */\n" +
+                        "/* Tekan tombol apapun pada keyboard untuk memulai peretasan*/\n" +
+                        "/* Shortcut: Alt (3x) = ACCESS GRANTED | CapsLock (3x) = DENIED */\n" +
+                        "/* ======================================================= */\n\n";
+            codeOutput.textContent = typedText;
+        };
+    </script>
+</body>
+</html>
